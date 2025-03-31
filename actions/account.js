@@ -1,28 +1,19 @@
 "use server";
 
 import { db } from "@/lib/prisma";
-import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
+import { checkUser } from "@/lib/checkUser";
 
+// Serialize Decimal fields (amount, balance)
 const serializeDecimal = (obj) => {
   const serialized = { ...obj };
-  if (obj.balance) {
-    serialized.balance = obj.balance.toNumber();
-  }
-  if (obj.amount) {
-    serialized.amount = obj.amount.toNumber();
-  }
+  if (obj.balance) serialized.balance = obj.balance.toNumber();
+  if (obj.amount) serialized.amount = obj.amount.toNumber();
   return serialized;
 };
 
 export async function getAccountWithTransactions(accountId) {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-  });
-
+  const user = await checkUser(); // ✅ Ensures DB user exists
   if (!user) throw new Error("User not found");
 
   const account = await db.account.findUnique({
@@ -50,16 +41,9 @@ export async function getAccountWithTransactions(accountId) {
 
 export async function bulkDeleteTransactions(transactionIds) {
   try {
-    const { userId } = await auth();
-    if (!userId) throw new Error("Unauthorized");
-
-    const user = await db.user.findUnique({
-      where: { clerkUserId: userId },
-    });
-
+    const user = await checkUser(); // ✅
     if (!user) throw new Error("User not found");
 
-    // Get transactions to calculate balance changes
     const transactions = await db.transaction.findMany({
       where: {
         id: { in: transactionIds },
@@ -67,19 +51,15 @@ export async function bulkDeleteTransactions(transactionIds) {
       },
     });
 
-    // Group transactions by account to update balances
-    const accountBalanceChanges = transactions.reduce((acc, transaction) => {
-      const change =
-        transaction.type === "EXPENSE"
-          ? transaction.amount
-          : -transaction.amount;
-      acc[transaction.accountId] = (acc[transaction.accountId] || 0) + change;
+    // Calculate balance changes per account
+    const accountBalanceChanges = transactions.reduce((acc, tx) => {
+      const change = tx.type === "EXPENSE" ? tx.amount : -tx.amount;
+      acc[tx.accountId] = (acc[tx.accountId] || 0) + change;
       return acc;
     }, {});
 
-    // Delete transactions and update account balances in a transaction
+    // Delete and update in a transaction
     await db.$transaction(async (tx) => {
-      // Delete transactions
       await tx.transaction.deleteMany({
         where: {
           id: { in: transactionIds },
@@ -87,10 +67,7 @@ export async function bulkDeleteTransactions(transactionIds) {
         },
       });
 
-      // Update account balances
-      for (const [accountId, balanceChange] of Object.entries(
-        accountBalanceChanges
-      )) {
+      for (const [accountId, balanceChange] of Object.entries(accountBalanceChanges)) {
         await tx.account.update({
           where: { id: accountId },
           data: {
@@ -107,24 +84,16 @@ export async function bulkDeleteTransactions(transactionIds) {
 
     return { success: true };
   } catch (error) {
+    console.error("❌ Error in bulkDeleteTransactions:", error.message);
     return { success: false, error: error.message };
   }
 }
 
 export async function updateDefaultAccount(accountId) {
   try {
-    const { userId } = await auth();
-    if (!userId) throw new Error("Unauthorized");
+    const user = await checkUser(); // ✅
+    if (!user) throw new Error("User not found");
 
-    const user = await db.user.findUnique({
-      where: { clerkUserId: userId },
-    });
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // First, unset any existing default account
     await db.account.updateMany({
       where: {
         userId: user.id,
@@ -133,7 +102,6 @@ export async function updateDefaultAccount(accountId) {
       data: { isDefault: false },
     });
 
-    // Then set the new default account
     const account = await db.account.update({
       where: {
         id: accountId,
@@ -143,8 +111,10 @@ export async function updateDefaultAccount(accountId) {
     });
 
     revalidatePath("/dashboard");
-    return { success: true, data: serializeTransaction(account) };
+
+    return { success: true, data: serializeDecimal(account) };
   } catch (error) {
+    console.error("❌ Error in updateDefaultAccount:", error.message);
     return { success: false, error: error.message };
   }
 }

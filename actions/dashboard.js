@@ -5,25 +5,17 @@ import { db } from "@/lib/prisma";
 import { request } from "@arcjet/next";
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
+import { checkUser } from "@/lib/checkUser"; // ✅ Add this!
 
 const serializeTransaction = (obj) => {
   const serialized = { ...obj };
-  if (obj.balance) {
-    serialized.balance = obj.balance.toNumber();
-  }
-  if (obj.amount) {
-    serialized.amount = obj.amount.toNumber();
-  }
+  if (obj.balance) serialized.balance = obj.balance.toNumber();
+  if (obj.amount) serialized.amount = obj.amount.toNumber();
   return serialized;
 };
 
 export async function getUserAccounts() {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-  });
+  const user = await checkUser(); // ✅ Ensures user exists in DB
 
   if (!user) {
     throw new Error("User not found");
@@ -42,12 +34,10 @@ export async function getUserAccounts() {
       },
     });
 
-    // Serialize accounts before sending to client
-    const serializedAccounts = accounts.map(serializeTransaction);
-
-    return serializedAccounts;
+    return accounts.map(serializeTransaction);
   } catch (error) {
-    console.error(error.message);
+    console.error("getUserAccounts Error:", error.message);
+    return [];
   }
 }
 
@@ -56,57 +46,30 @@ export async function createAccount(data) {
     const { userId } = await auth();
     if (!userId) throw new Error("Unauthorized");
 
-    // Get request data for ArcJet
     const req = await request();
-
-    // Check rate limit
-    const decision = await aj.protect(req, {
-      userId,
-      requested: 1, // Specify how many tokens to consume
-    });
+    const decision = await aj.protect(req, { userId, requested: 1 });
 
     if (decision.isDenied()) {
       if (decision.reason.isRateLimit()) {
         const { remaining, reset } = decision.reason;
-        console.error({
-          code: "RATE_LIMIT_EXCEEDED",
-          details: {
-            remaining,
-            resetInSeconds: reset,
-          },
-        });
-
-        throw new Error("Too many requests. Please try again later.");
+        throw new Error("Too many requests. Try later.");
       }
-
       throw new Error("Request blocked");
     }
 
-    const user = await db.user.findUnique({
-      where: { clerkUserId: userId },
-    });
+    const user = await checkUser(); // ✅ Use checkUser here too
+    if (!user) throw new Error("User not found");
 
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Convert balance to float before saving
     const balanceFloat = parseFloat(data.balance);
-    if (isNaN(balanceFloat)) {
-      throw new Error("Invalid balance amount");
-    }
+    if (isNaN(balanceFloat)) throw new Error("Invalid balance amount");
 
-    // Check if this is the user's first account
     const existingAccounts = await db.account.findMany({
       where: { userId: user.id },
     });
 
-    // If it's the first account, make it default regardless of user input
-    // If not, use the user's preference
     const shouldBeDefault =
       existingAccounts.length === 0 ? true : data.isDefault;
 
-    // If this account should be default, unset other default accounts
     if (shouldBeDefault) {
       await db.account.updateMany({
         where: { userId: user.id, isDefault: true },
@@ -114,39 +77,28 @@ export async function createAccount(data) {
       });
     }
 
-    // Create new account
     const account = await db.account.create({
       data: {
         ...data,
         balance: balanceFloat,
         userId: user.id,
-        isDefault: shouldBeDefault, // Override the isDefault based on our logic
+        isDefault: shouldBeDefault,
       },
     });
 
-    // Serialize the account before returning
-    const serializedAccount = serializeTransaction(account);
-
     revalidatePath("/dashboard");
-    return { success: true, data: serializedAccount };
+    return { success: true, data: serializeTransaction(account) };
   } catch (error) {
+    console.error("createAccount Error:", error.message);
     throw new Error(error.message);
   }
 }
 
 export async function getDashboardData() {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
+  const user = await checkUser(); // ✅ Same fix
 
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-  });
+  if (!user) throw new Error("User not found");
 
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  // Get all user transactions
   const transactions = await db.transaction.findMany({
     where: { userId: user.id },
     orderBy: { date: "desc" },
