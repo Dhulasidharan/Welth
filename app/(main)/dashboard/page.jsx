@@ -1,18 +1,24 @@
-// File: app/dashboard/page.tsx
+// app/(main)/dashboard/page.jsx
 
 import { getUserAccounts } from "@/actions/dashboard";
 import { getDashboardData } from "@/actions/dashboard";
 import { getCurrentBudget } from "@/actions/budget";
+import { checkUser } from "@/lib/checkUser"; // ✅ Moved here
 
-import AccountCard from "./_components/account-card"; // ✅ default export
-import {DashboardOverview} from "./_components/transaction-overview"; // ✅ Named  default export
-import { BudgetProgress } from "./_components/budget-progress"; // ✅ named export
-
-import CreateAccountDrawer from "@/components/create-account-drawer"; // ✅ default export
-import { Card, CardContent } from "@/components/ui/card"; // ✅ named exports
+import AccountCard from "./_components/account-card";
+import { DashboardOverview } from "./_components/transaction-overview";
+import { BudgetProgress } from "./_components/budget-progress";
+import CreateAccountDrawer from "@/components/create-account-drawer";
+import { Card, CardContent } from "@/components/ui/card";
 import { Plus } from "lucide-react";
 
 export default async function DashboardPage() {
+  const user = await checkUser(); // ✅ Runs only on /dashboard (middleware applies here)
+
+  if (!user) {
+    return <div className="text-red-500 text-center mt-10">User not found</div>;
+  }
+
   const [accounts, transactions] = await Promise.all([
     getUserAccounts(),
     getDashboardData(),
@@ -25,22 +31,8 @@ export default async function DashboardPage() {
     budgetData = await getCurrentBudget(defaultAccount.id);
   }
 
-  // ✅ Debug log to identify undefined components or props
-  console.log("Component checks:", {
-    AccountCard,
-    DashboardOverview,
-    BudgetProgress,
-    CreateAccountDrawer,
-    Card,
-    CardContent,
-    accounts,
-    transactions,
-    budgetData,
-  });
-
   return (
     <div className="space-y-8">
-      {/* Budget Progress */}
       {BudgetProgress && budgetData && (
         <BudgetProgress
           initialBudget={budgetData?.budget}
@@ -48,7 +40,6 @@ export default async function DashboardPage() {
         />
       )}
 
-      {/* Dashboard Overview */}
       {DashboardOverview && (
         <DashboardOverview
           accounts={accounts}
@@ -56,7 +47,6 @@ export default async function DashboardPage() {
         />
       )}
 
-      {/* Accounts Grid */}
       {CreateAccountDrawer && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <CreateAccountDrawer>

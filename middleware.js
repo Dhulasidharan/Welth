@@ -1,36 +1,38 @@
+// middleware.js (root level)
+
 import arcjet, { createMiddleware, detectBot, shield } from "@arcjet/next";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+// Protect these routes from unauthenticated access
+console.log("Middleware Added");
 const isProtectedRoute = createRouteMatcher([
   "/dashboard(.*)",
   "/account(.*)",
   "/transaction(.*)",
 ]);
 
+// ✅ Fix: Ensure runtime is Node.js (Arcjet needs this)
 export const runtime = "nodejs";
 
-// Create Arcjet middleware
+// ✅ Arcjet middleware setup
 const aj = arcjet({
   key: process.env.ARCJET_KEY,
-  // characteristics: ["userId"], // Track based on Clerk userId
   rules: [
-    // Shield protection for content and security
     shield({
       mode: "LIVE",
     }),
     detectBot({
-      mode: "LIVE", // will block requests. Use "DRY_RUN" to log only
+      mode: "LIVE",
       allow: [
-        "CATEGORY:SEARCH_ENGINE", // Google, Bing, etc
-        "GO_HTTP", // For Inngest
-        // See the full list at https://arcjet.com/bot-list
+        "CATEGORY:SEARCH_ENGINE", // Google, Bing, etc.
+        "GO_HTTP", // For Inngest and DevTools
       ],
     }),
   ],
 });
 
-// Create base Clerk middleware
+// ✅ Clerk middleware setup
 const clerk = clerkMiddleware(async (auth, req) => {
   const { userId } = await auth();
 
@@ -42,14 +44,15 @@ const clerk = clerkMiddleware(async (auth, req) => {
   return NextResponse.next();
 });
 
-// Chain middlewares - ArcJet runs first, then Clerk
+// ✅ Combine Arcjet → then Clerk middleware
 export default createMiddleware(aj, clerk);
 
+// ✅ Define which routes the middleware should apply to
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files, unless found in search params
+    // Match all except Next.js internals and static files
     "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    // Always run for API routes
+    // Always include API routes
     "/(api|trpc)(.*)",
   ],
 };
