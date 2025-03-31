@@ -5,7 +5,7 @@ import { getDashboardData } from "@/actions/dashboard";
 import { getCurrentBudget } from "@/actions/budget";
 
 import AccountCard from "./_components/account-card"; // ✅ default export
-import DashboardOverview from "./_components/transaction-overview"; // ✅ default export
+import {DashboardOverview} from "./_components/transaction-overview"; // ✅ Named  default export
 import { BudgetProgress } from "./_components/budget-progress"; // ✅ named export
 
 import CreateAccountDrawer from "@/components/create-account-drawer"; // ✅ default export

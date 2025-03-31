@@ -8,6 +8,8 @@ const isProtectedRoute = createRouteMatcher([
   "/transaction(.*)",
 ]);
 
+export const runtime = "nodejs";
+
 // Create Arcjet middleware
 const aj = arcjet({
   key: process.env.ARCJET_KEY,
