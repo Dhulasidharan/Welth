@@ -54,6 +54,7 @@ export async function createAccount(data) {
       throw new Error("Request blocked");
     }
 
+    
     const user = await checkUser();
     if (!user) throw new Error("User not found");
 
