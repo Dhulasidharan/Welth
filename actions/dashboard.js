@@ -1,3 +1,5 @@
+// actions/dashboard.js
+
 "use server";
 
 import aj from "@/lib/arcjet";
@@ -5,7 +7,7 @@ import { db } from "@/lib/prisma";
 import { request } from "@arcjet/next";
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
-import { checkUser } from "@/lib/checkUser"; // ✅ Add this!
+import { checkUser } from "@/lib/checkUser";
 
 const serializeTransaction = (obj) => {
   const serialized = { ...obj };
@@ -15,11 +17,8 @@ const serializeTransaction = (obj) => {
 };
 
 export async function getUserAccounts() {
-  const user = await checkUser(); // ✅ Ensures user exists in DB
-
-  if (!user) {
-    throw new Error("User not found");
-  }
+  const user = await checkUser();
+  if (!user) throw new Error("User not found");
 
   try {
     const accounts = await db.account.findMany({
@@ -27,9 +26,7 @@ export async function getUserAccounts() {
       orderBy: { createdAt: "desc" },
       include: {
         _count: {
-          select: {
-            transactions: true,
-          },
+          select: { transactions: true },
         },
       },
     });
@@ -57,7 +54,7 @@ export async function createAccount(data) {
       throw new Error("Request blocked");
     }
 
-    const user = await checkUser(); // ✅ Use checkUser here too
+    const user = await checkUser();
     if (!user) throw new Error("User not found");
 
     const balanceFloat = parseFloat(data.balance);
@@ -95,8 +92,7 @@ export async function createAccount(data) {
 }
 
 export async function getDashboardData() {
-  const user = await checkUser(); // ✅ Same fix
-
+  const user = await checkUser();
   if (!user) throw new Error("User not found");
 
   const transactions = await db.transaction.findMany({
